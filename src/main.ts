@@ -3,6 +3,11 @@ import type { RigidBody, BoatParams } from './physics/integrator'
 import { boatFromLength } from './scene/boat'
 import { lBerth } from './scene/dock'
 import { setupCanvas, drawScene } from './render/canvas'
+import { drawOverlay } from './render/overlay'
+import {
+  controlForces, netForces, propulsionTuning, defaultStandstillAuthority,
+} from './physics/propulsion'
+import type { Controls, RudderConfig } from './physics/propulsion'
 import { ftToM, msToKnots, SCALE_PX_PER_M } from './units'
 
 // ── Scene setup ────────────────────────────────────────────────────────────
@@ -18,9 +23,9 @@ const params: BoatParams = {
   dampSway:        geo.dampSway,
   dampYaw:         geo.dampYaw,
 }
+const tuning = propulsionTuning(geo)
 
 // L-berth: quay along +x, finger at x=0 extending in +y
-// Size the quay generously around the boat
 const QUAY_LEN   = geo.lengthM * 2.5
 const FINGER_LEN = geo.beamM   * 4
 const segments = lBerth(QUAY_LEN, FINGER_LEN)
@@ -37,6 +42,16 @@ function makeInitialBody(): RigidBody {
 
 let body = makeInitialBody()
 
+// ── Control state ────────────────────────────────────────────────────────────
+
+const controls: Controls = {
+  throttle: 0,
+  helm: 0,
+  rudderConfig: 'single',
+  standstillAuthority: defaultStandstillAuthority('single'),
+}
+let showHullDrag = false
+
 // ── Canvas ─────────────────────────────────────────────────────────────────
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -45,7 +60,6 @@ const H = 500
 setupCanvas(canvas, W, H)
 const ctx = canvas.getContext('2d')!
 
-// Scene origin in canvas coords: 30 px from left, 3/4 down
 const ORIGIN_X = 50
 const ORIGIN_Y = H - 80
 
@@ -65,11 +79,15 @@ function tick(now: number) {
   accumulator += rawDt
 
   while (accumulator >= FIXED_DT) {
-    body = step(body, params, { fx: 0, fy: 0, mz: 0 }, FIXED_DT)
+    const components = controlForces(body, geo, controls, tuning)
+    body = step(body, params, netForces(components), FIXED_DT)
     accumulator -= FIXED_DT
   }
 
   drawScene(ctx, segments, geo, body, ORIGIN_X, ORIGIN_Y)
+  // Recompute components for the current frame so overlay matches what's drawn.
+  const components = controlForces(body, geo, controls, tuning)
+  drawOverlay(ctx, body, params, components, { showHullDrag }, ORIGIN_X, ORIGIN_Y)
   updateHUD()
   requestAnimationFrame(tick)
 }
@@ -83,41 +101,80 @@ function updateHUD() {
   }
 }
 
-// ── Debug impulse buttons ──────────────────────────────────────────────────
+// ── Control wiring ───────────────────────────────────────────────────────────
 
-// Impulse magnitudes: force × dt to give a velocity kick
-const SURGE_IMPULSE = params.mass * 0.8           // N·s → ~0.8 m/s surge
-const SWAY_IMPULSE  = (params.mass + params.addedMassSway) * 0.6
-const YAW_IMPULSE   = (params.inertia + params.addedInertiaYaw) * 0.4  // N·m·s
+const throttleEl   = document.getElementById('throttle')      as HTMLInputElement
+const throttleVal  = document.getElementById('throttle-val')  as HTMLSpanElement
+const helmEl       = document.getElementById('helm')          as HTMLInputElement
+const configEl     = document.getElementById('rudder-config') as HTMLSelectElement
+const standstillEl = document.getElementById('standstill')    as HTMLInputElement
+const standstillVal = document.getElementById('standstill-val') as HTMLSpanElement
+const dragEl       = document.getElementById('toggle-drag')   as HTMLInputElement
 
-function applyImpulse(bodySurge: number, bodySway: number, bodyYaw: number) {
-  const cos = Math.cos(body.heading)
-  const sin = Math.sin(body.heading)
-  body = {
-    ...body,
-    // Convert body-frame impulse to velocity change, then to world velocities
-    vx: body.vx + (bodySurge * cos - bodySway * sin) / params.mass,
-    vy: body.vy + (bodySurge * sin + bodySway * cos) / params.mass,
-    yawRate: body.yawRate + bodyYaw / (params.inertia + params.addedInertiaYaw),
-  }
+function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
+
+function syncThrottle() {
+  controls.throttle = parseFloat(throttleEl.value)
+  throttleVal.textContent = `${Math.round(controls.throttle * 100)}%`
+}
+function syncHelm() {
+  controls.helm = parseFloat(helmEl.value)
+}
+function syncStandstill() {
+  controls.standstillAuthority = parseFloat(standstillEl.value)
+  standstillVal.textContent = controls.standstillAuthority.toFixed(2)
 }
 
-document.getElementById('btn-surge')!.addEventListener('click', () =>
-  applyImpulse(SURGE_IMPULSE, 0, 0))
+// Rudder config: twin locks standstill authority to zero and disables the slider.
+function applyConfig(config: RudderConfig) {
+  controls.rudderConfig = config
+  if (config === 'twin') {
+    standstillEl.disabled = true
+    standstillEl.value = '0'
+  } else {
+    standstillEl.disabled = false
+    standstillEl.value = String(defaultStandstillAuthority('single'))
+  }
+  syncStandstill()
+}
 
-document.getElementById('btn-sway')!.addEventListener('click', () =>
-  applyImpulse(0, SWAY_IMPULSE, 0))
+throttleEl.addEventListener('input', syncThrottle)
+helmEl.addEventListener('input', syncHelm)
+standstillEl.addEventListener('input', syncStandstill)
+configEl.addEventListener('change', () => applyConfig(configEl.value as RudderConfig))
+dragEl.addEventListener('change', () => { showHullDrag = dragEl.checked })
 
-document.getElementById('btn-yaw')!.addEventListener('click', () =>
-  applyImpulse(0, 0, YAW_IMPULSE))
+document.getElementById('btn-centre')!.addEventListener('click', () => {
+  helmEl.value = '0'
+  syncHelm()
+})
 
 document.getElementById('btn-reset')!.addEventListener('click', () => {
   body = makeInitialBody()
+  throttleEl.value = '0'
+  helmEl.value = '0'
+  syncThrottle()
+  syncHelm()
 })
 
-// ── Canvas info label ──────────────────────────────────────────────────────
+// Keyboard: ↑/↓ throttle (holds), ←/→ helm (holds), C centres helm.
+window.addEventListener('keydown', (e) => {
+  switch (e.key) {
+    case 'ArrowUp':    throttleEl.value = String(clamp(controls.throttle + 0.1, -1, 1)); syncThrottle(); e.preventDefault(); break
+    case 'ArrowDown':  throttleEl.value = String(clamp(controls.throttle - 0.1, -1, 1)); syncThrottle(); e.preventDefault(); break
+    case 'ArrowLeft':  helmEl.value = String(clamp(controls.helm - 0.1, -1, 1)); syncHelm(); e.preventDefault(); break
+    case 'ArrowRight': helmEl.value = String(clamp(controls.helm + 0.1, -1, 1)); syncHelm(); e.preventDefault(); break
+    case 'c': case 'C': helmEl.value = '0'; syncHelm(); break
+  }
+})
 
-// Append a scale ruler to the footer
+// Initialise UI to defaults.
+syncThrottle()
+syncHelm()
+applyConfig('single')
+
+// ── Scale label ──────────────────────────────────────────────────────────────
+
 const info = document.getElementById('info')
 if (info) {
   const scaleM = 10  // 10 m ruler

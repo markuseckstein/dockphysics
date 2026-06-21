@@ -13,6 +13,9 @@ export interface BoatGeometry {
   dampSway: number
   dampYaw: number        // N·m·s/rad
   cleats: Vec2[]         // in boat body frame, origin at CoM
+  saildrive: Vec2        // centreline thrust point, body frame (forward of rudder)
+  rudderX: number        // longitudinal rudder position (aft, body frame x)
+  rudderOutboardY: number // lateral offset of each twin outboard rudder (|y|)
 }
 
 // Bavaria Cruiser class reference: 37 ft → 7500 kg, 49 ft → 12000 kg
@@ -50,5 +53,15 @@ export function boatFromLength(lengthFt: number): BoatGeometry {
     { x: -halfL * 0.85,  y: -halfB * 0.6 },   // stern port
   ]
 
-  return { lengthM: L, beamM, massKg, inertiaYaw, addedMassSway, addedInertiaYaw, dampSurge, dampSway, dampYaw, cleats }
+  // Saildrive sits on the centreline, under the sole, forward of the rudder.
+  // Rudder(s) sit near the stern; twin outboard rudders are offset to ~half-beam.
+  const saildrive: Vec2 = { x: -halfL * 0.30, y: 0 }
+  const rudderX = -halfL * 0.90
+  const rudderOutboardY = halfB * 0.55
+
+  return {
+    lengthM: L, beamM, massKg, inertiaYaw, addedMassSway, addedInertiaYaw,
+    dampSurge, dampSway, dampYaw, cleats,
+    saildrive, rudderX, rudderOutboardY,
+  }
 }
