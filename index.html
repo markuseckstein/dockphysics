@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DockPhysics</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        background: #0a1628;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+        font-family: monospace;
+        color: #c8d8e8;
+      }
+      header {
+        padding: 10px 20px;
+        font-size: 14px;
+        letter-spacing: 0.1em;
+        color: #7aa7c8;
+      }
+      #canvas-container {
+        position: relative;
+      }
+      canvas {
+        display: block;
+        border: 1px solid #1e3a5f;
+      }
+      #controls {
+        padding: 10px 20px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      button {
+        background: #1e3a5f;
+        color: #c8d8e8;
+        border: 1px solid #3a6a9f;
+        padding: 6px 16px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 13px;
+        border-radius: 3px;
+      }
+      button:hover { background: #2a5a8f; }
+      #info {
+        font-size: 11px;
+        color: #5a8ab0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>DockPhysics — bird's-eye view</header>
+    <div id="canvas-container">
+      <canvas id="canvas"></canvas>
+    </div>
+    <div id="controls">
+      <button id="btn-surge">Surge impulse</button>
+      <button id="btn-sway">Sway impulse</button>
+      <button id="btn-yaw">Yaw impulse</button>
+      <button id="btn-reset">Reset</button>
+      <span id="info">vel: — &nbsp; yawRate: —</span>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

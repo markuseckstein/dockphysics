@@ -1,0 +1,54 @@
+import { ftToM } from '../units'
+
+export interface Vec2 { x: number; y: number }
+
+export interface BoatGeometry {
+  lengthM: number
+  beamM: number
+  massKg: number
+  inertiaYaw: number     // kg·m²
+  addedMassSway: number  // kg
+  addedInertiaYaw: number
+  dampSurge: number      // N·s/m
+  dampSway: number
+  dampYaw: number        // N·m·s/rad
+  cleats: Vec2[]         // in boat body frame, origin at CoM
+}
+
+// Bavaria Cruiser class reference: 37 ft → 7500 kg, 49 ft → 12000 kg
+// Beam: ~30 % of length. Linear interpolation on length for mass.
+export function boatFromLength(lengthFt: number): BoatGeometry {
+  const L = ftToM(lengthFt)
+  const beamM = L * 0.315
+
+  // Mass: linear between (37 ft, 7500 kg) and (49 ft, 12000 kg)
+  const massKg = 7500 + (lengthFt - 37) / (49 - 37) * (12000 - 7500)
+
+  // Slender-body yaw inertia: I ≈ m * L² / 12
+  const inertiaYaw = massKg * L * L / 12
+
+  // Added mass ≈ 50 % of mass on sway, 35 % of inertia on yaw
+  const addedMassSway    = massKg * 0.50
+  const addedInertiaYaw  = inertiaYaw * 0.35
+
+  // Linear damping coefficients tuned for docking-speed stability
+  // Surge: low (glides forward), sway/yaw: high (resists lateral/rotational)
+  const dampSurge = massKg * 0.06
+  const dampSway  = (massKg + addedMassSway) * 0.80
+  const dampYaw   = (inertiaYaw + addedInertiaYaw) * 0.80
+
+  // Six cleats: bow/midship/stern × port/stbd
+  // x is longitudinal (positive = bow), y is lateral (positive = port/+y)
+  const halfL = L / 2
+  const halfB = beamM / 2
+  const cleats: Vec2[] = [
+    { x:  halfL,         y:  halfB * 0.6 },  // bow stbd
+    { x:  halfL,         y: -halfB * 0.6 },  // bow port
+    { x:  0,             y:  halfB },          // midship stbd
+    { x:  0,             y: -halfB },          // midship port
+    { x: -halfL * 0.85,  y:  halfB * 0.6 },   // stern stbd
+    { x: -halfL * 0.85,  y: -halfB * 0.6 },   // stern port
+  ]
+
+  return { lengthM: L, beamM, massKg, inertiaYaw, addedMassSway, addedInertiaYaw, dampSurge, dampSway, dampYaw, cleats }
+}
