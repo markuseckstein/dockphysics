@@ -21,68 +21,77 @@
         letter-spacing: 0.1em;
         color: #7aa7c8;
       }
-      #canvas-container {
-        position: relative;
-      }
+      #stage { display: flex; gap: 12px; align-items: flex-start; }
+      #canvas-container { position: relative; }
       canvas {
         display: block;
         border: 1px solid #1e3a5f;
+        cursor: crosshair;
       }
+      #side {
+        width: 200px;
+        border: 1px solid #1e3a5f;
+        border-radius: 4px;
+        padding: 10px;
+        font-size: 11px;
+        min-height: 200px;
+      }
+      #side h3 { font-size: 11px; color: #7aa7c8; margin-bottom: 8px; letter-spacing: 0.08em; }
+      #tensions { display: flex; flex-direction: column; gap: 6px; }
+      .tension-row { display: flex; justify-content: space-between; gap: 6px; }
+      .tension-row .name { color: #9fb8cf; }
+      .hint { color: #5a8ab0; font-size: 10px; margin-top: 12px; line-height: 1.5; }
       #controls {
         padding: 10px 20px;
         display: flex;
-        gap: 18px;
+        gap: 16px;
         align-items: center;
         flex-wrap: wrap;
-        max-width: 900px;
+        max-width: 1140px;
       }
-      .ctrl-group {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        align-items: flex-start;
-      }
-      .ctrl-group label {
-        font-size: 10px;
-        color: #7aa7c8;
-        letter-spacing: 0.05em;
-      }
+      .ctrl-group { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+      .ctrl-group label { font-size: 10px; color: #7aa7c8; letter-spacing: 0.05em; }
       .ctrl-row { display: flex; gap: 8px; align-items: center; }
       button {
-        background: #1e3a5f;
-        color: #c8d8e8;
-        border: 1px solid #3a6a9f;
-        padding: 6px 14px;
-        cursor: pointer;
-        font-family: monospace;
-        font-size: 13px;
-        border-radius: 3px;
+        background: #1e3a5f; color: #c8d8e8; border: 1px solid #3a6a9f;
+        padding: 6px 14px; cursor: pointer; font-family: monospace;
+        font-size: 13px; border-radius: 3px;
       }
       button:hover { background: #2a5a8f; }
-      input[type="range"] { width: 130px; accent-color: #3a6a9f; }
+      input[type="range"] { width: 120px; accent-color: #3a6a9f; }
       input[type="range"]:disabled { opacity: 0.4; }
       select {
-        background: #1e3a5f;
-        color: #c8d8e8;
-        border: 1px solid #3a6a9f;
-        padding: 5px 8px;
-        font-family: monospace;
-        font-size: 13px;
-        border-radius: 3px;
+        background: #1e3a5f; color: #c8d8e8; border: 1px solid #3a6a9f;
+        padding: 5px 8px; font-family: monospace; font-size: 13px; border-radius: 3px;
       }
       .readout { font-size: 11px; color: #c8d8e8; min-width: 48px; }
-      #info {
-        font-size: 11px;
-        color: #5a8ab0;
-      }
+      #info { font-size: 11px; color: #5a8ab0; }
     </style>
   </head>
   <body>
     <header>DockPhysics — bird's-eye view</header>
-    <div id="canvas-container">
-      <canvas id="canvas"></canvas>
+    <div id="stage">
+      <div id="canvas-container">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="side">
+        <h3>LINE TENSIONS</h3>
+        <div id="tensions"></div>
+        <div class="hint">
+          Make fast: click a boat cleat, then click the dock.<br />
+          [ ease &nbsp; ] take up &nbsp; Del release<br />
+          Space play/pause &nbsp; R reset<br />
+          Drag to pan &nbsp; scroll to zoom
+        </div>
+      </div>
     </div>
     <div id="controls">
+      <div class="ctrl-group">
+        <label>Preset</label>
+        <select id="preset">
+          <option value="free">Free sail</option>
+        </select>
+      </div>
       <div class="ctrl-group">
         <label>Throttle (↑/↓)</label>
         <div class="ctrl-row">
@@ -105,21 +114,53 @@
         </select>
       </div>
       <div class="ctrl-group">
-        <label>Standstill steering authority</label>
+        <label>Standstill authority</label>
         <div class="ctrl-row">
           <input id="standstill" type="range" min="0" max="1" step="0.05" value="0.3" />
           <span id="standstill-val" class="readout">0.30</span>
         </div>
       </div>
       <div class="ctrl-group">
-        <label>Overlay</label>
+        <label>Boat length</label>
         <div class="ctrl-row">
-          <label style="color:#c8d8e8"><input id="toggle-drag" type="checkbox" /> hull drag</label>
+          <input id="length" type="range" min="37" max="49" step="1" value="40" />
+          <span id="length-val" class="readout">40 ft</span>
         </div>
       </div>
       <div class="ctrl-group">
-        <label>&nbsp;</label>
-        <button id="btn-reset">Reset</button>
+        <label>Wind speed</label>
+        <div class="ctrl-row">
+          <input id="wind-speed" type="range" min="0" max="25" step="0.5" value="0" />
+          <span id="wind-speed-val" class="readout">0 kn</span>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <label>Wind dir (toward °)</label>
+        <div class="ctrl-row">
+          <input id="wind-dir" type="range" min="0" max="359" step="1" value="270" />
+          <span id="wind-dir-val" class="readout">270°</span>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <label>Overlay</label>
+        <div class="ctrl-row">
+          <label style="color:#c8d8e8"><input id="toggle-drag" type="checkbox" /> drag</label>
+          <label style="color:#c8d8e8"><input id="toggle-contact" type="checkbox" /> contact</label>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <label>Sim</label>
+        <div class="ctrl-row">
+          <button id="btn-play">Pause</button>
+          <label style="color:#c8d8e8"><input id="toggle-slowmo" type="checkbox" /> 0.25×</label>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <label>View</label>
+        <div class="ctrl-row">
+          <button id="btn-fit">Fit</button>
+          <button id="btn-reset">Reset (R)</button>
+        </div>
       </div>
       <span id="info">vel: — &nbsp; yawRate: —</span>
     </div>
