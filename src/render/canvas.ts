@@ -167,7 +167,7 @@ export function drawScene(
 
   // HUD text
   ctx.fillStyle = '#7aa7c8'
-  ctx.font = '11px monospace'
+  ctx.font = '13px monospace'
   ctx.fillText(`x: ${body.x.toFixed(1)} m  y: ${body.y.toFixed(1)} m  hdg: ${(body.heading * 180 / Math.PI).toFixed(1)}°`, 12, 18)
 }
 

@@ -38,11 +38,15 @@ export function boatFromLength(lengthFt: number): BoatGeometry {
   const addedMassSway    = massKg * 0.50
   const addedInertiaYaw  = inertiaYaw * 0.35
 
-  // Linear damping coefficients tuned for docking-speed stability
-  // Surge: low (glides forward), sway/yaw: high (resists lateral/rotational)
-  const dampSurge = massKg * 0.06
+  // Linear damping coefficients tuned for docking-speed stability.
+  // Surge: moderate so the engine bites — the surge time-constant is
+  // mass/dampSurge = 1/0.20 ≈ 5 s (was 0.06 ≈ 17 s, which felt sluggish).
+  // Top speed is unaffected because maxThrust scales with dampSurge.
+  // Sway: high (resists lateral skating). Yaw: lowered (0.80 → 0.60) so the
+  // boat builds and holds a turn faster while still settling cleanly.
+  const dampSurge = massKg * 0.20
   const dampSway  = (massKg + addedMassSway) * 0.80
-  const dampYaw   = (inertiaYaw + addedInertiaYaw) * 0.80
+  const dampYaw   = (inertiaYaw + addedInertiaYaw) * 0.60
 
   // Six cleats: bow/midship/stern × port/stbd
   // x is longitudinal (positive = bow), y is lateral (positive = port/+y)

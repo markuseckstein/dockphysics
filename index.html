@@ -6,66 +6,69 @@
     <title>DockPhysics</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; }
       body {
         background: #0a1628;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        min-height: 100vh;
+        height: 100vh;
+        overflow: hidden;
         font-family: monospace;
         color: #c8d8e8;
       }
       header {
-        padding: 10px 20px;
-        font-size: 14px;
+        padding: 6px 12px;
+        font-size: 16px;
         letter-spacing: 0.1em;
         color: #7aa7c8;
+        flex: 0 0 auto;
       }
-      #stage { display: flex; gap: 12px; align-items: flex-start; }
-      #canvas-container { position: relative; }
+      /* Stage fills all vertical space between header and the control bar. */
+      #stage { display: flex; gap: 8px; align-items: stretch; flex: 1 1 auto; min-height: 0; padding: 0 8px; }
+      #canvas-container { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; }
       canvas {
         display: block;
-        border: 1px solid #1e3a5f;
         cursor: crosshair;
       }
       #side {
-        width: 200px;
+        flex: 0 0 220px;
         border: 1px solid #1e3a5f;
         border-radius: 4px;
-        padding: 10px;
-        font-size: 11px;
-        min-height: 200px;
+        padding: 12px;
+        font-size: 13px;
+        overflow-y: auto;
       }
-      #side h3 { font-size: 11px; color: #7aa7c8; margin-bottom: 8px; letter-spacing: 0.08em; }
+      #side h3 { font-size: 13px; color: #7aa7c8; margin-bottom: 8px; letter-spacing: 0.08em; }
       #tensions { display: flex; flex-direction: column; gap: 6px; }
       .tension-row { display: flex; justify-content: space-between; gap: 6px; }
       .tension-row .name { color: #9fb8cf; }
-      .hint { color: #5a8ab0; font-size: 10px; margin-top: 12px; line-height: 1.5; }
+      .hint { color: #5a8ab0; font-size: 12px; margin-top: 12px; line-height: 1.55; }
+      .hint .pivot { color: #c8d8e8; }
       #controls {
-        padding: 10px 20px;
+        padding: 8px 12px;
         display: flex;
         gap: 16px;
         align-items: center;
         flex-wrap: wrap;
-        max-width: 1140px;
+        flex: 0 0 auto;
       }
       .ctrl-group { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-      .ctrl-group label { font-size: 10px; color: #7aa7c8; letter-spacing: 0.05em; }
+      .ctrl-group label { font-size: 12px; color: #7aa7c8; letter-spacing: 0.05em; }
       .ctrl-row { display: flex; gap: 8px; align-items: center; }
       button {
         background: #1e3a5f; color: #c8d8e8; border: 1px solid #3a6a9f;
         padding: 6px 14px; cursor: pointer; font-family: monospace;
-        font-size: 13px; border-radius: 3px;
+        font-size: 15px; border-radius: 3px;
       }
       button:hover { background: #2a5a8f; }
       input[type="range"] { width: 120px; accent-color: #3a6a9f; }
       input[type="range"]:disabled { opacity: 0.4; }
       select {
         background: #1e3a5f; color: #c8d8e8; border: 1px solid #3a6a9f;
-        padding: 5px 8px; font-family: monospace; font-size: 13px; border-radius: 3px;
+        padding: 5px 8px; font-family: monospace; font-size: 15px; border-radius: 3px;
       }
-      .readout { font-size: 11px; color: #c8d8e8; min-width: 48px; }
-      #info { font-size: 11px; color: #5a8ab0; }
+      .readout { font-size: 13px; color: #c8d8e8; min-width: 48px; }
+      #info { font-size: 13px; color: #5a8ab0; }
     </style>
   </head>
   <body>
@@ -82,6 +85,11 @@
           [ ease &nbsp; ] take up &nbsp; Del release<br />
           Space play/pause &nbsp; R reset<br />
           Drag to pan &nbsp; scroll to zoom
+          <br /><br />
+          <span class="pivot">&#x2295; pivot point</span> &mdash; the white
+          crosshair marks the spot the boat is turning around right now (its
+          instantaneous centre of rotation). Spring-line magic: make a line fast
+          and the pivot jumps to the cleat.
         </div>
       </div>
     </div>
@@ -116,8 +124,8 @@
       <div class="ctrl-group">
         <label>Standstill authority</label>
         <div class="ctrl-row">
-          <input id="standstill" type="range" min="0" max="1" step="0.05" value="0.3" />
-          <span id="standstill-val" class="readout">0.30</span>
+          <input id="standstill" type="range" min="0" max="1" step="0.05" value="0.5" />
+          <span id="standstill-val" class="readout">0.50</span>
         </div>
       </div>
       <div class="ctrl-group">

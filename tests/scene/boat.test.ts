@@ -52,4 +52,21 @@ describe('boatFromLength', () => {
     expect(b.addedMassSway).toBeGreaterThan(0)
     expect(b.addedMassSway).toBeLessThan(b.massKg * 2)
   })
+
+  it('surge time-constant is ~5 s so the engine bites (not the old sluggish ~17 s)', () => {
+    // τ = mass / dampSurge. Coefficient 0.20 → 5 s; the old 0.06 gave ~17 s.
+    for (const ft of [37, 40, 49]) {
+      const b = boatFromLength(ft)
+      expect(b.massKg / b.dampSurge).toBeCloseTo(5, 1)
+    }
+  })
+
+  it('yaw time-constant is shorter than before so turns build quickly', () => {
+    // τ_yaw = (I + I_added) / dampYaw. Coefficient 0.60 → ~1.67 s (was 1.25 s
+    // at 0.80 — wait: lower coefficient = longer constant). The point of the
+    // 0.80→0.60 drop is a higher steady-state turn rate, asserted in propulsion.
+    const b = boatFromLength(40)
+    const tau = (b.inertiaYaw + b.addedInertiaYaw) / b.dampYaw
+    expect(tau).toBeCloseTo(1 / 0.60, 5)
+  })
 })

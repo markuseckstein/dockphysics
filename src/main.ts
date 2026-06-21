@@ -66,12 +66,27 @@ function toParams(g: BoatGeometry): BoatParams {
 // ── Canvas / camera ───────────────────────────────────────────────────────────
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
-const W = 880, H = 520
-setupCanvas(canvas, W, H)
+const canvasContainer = document.getElementById('canvas-container') as HTMLDivElement
 const ctx = canvas.getContext('2d')!
-const ORIGIN_X = 60
-const ORIGIN_Y = H - 90
+
+// Canvas size and scene origin are recomputed on every resize so the view fills
+// the available space. Origin stays near the lower-left with a small margin.
+let viewW = 880, viewH = 520
+let originX = 60
+let originY = viewH - 90
 let cam: Camera = makeCamera()
+
+function resize() {
+  const rect = canvasContainer.getBoundingClientRect()
+  viewW = Math.max(320, Math.floor(rect.width))
+  viewH = Math.max(240, Math.floor(rect.height))
+  setupCanvas(canvas, viewW, viewH)
+  canvas.style.width = `${viewW}px`
+  canvas.style.height = `${viewH}px`
+  originX = 60
+  originY = viewH - 90
+  fitView()
+}
 
 function sceneBounds() {
   let minX = body.x, minY = body.y, maxX = body.x, maxY = body.y
@@ -83,7 +98,7 @@ function sceneBounds() {
   return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
 }
 
-function fitView() { cam = fitCamera(sceneBounds(), W, H, ORIGIN_X, ORIGIN_Y) }
+function fitView() { cam = fitCamera(sceneBounds(), viewW, viewH, originX, originY) }
 
 // ── State assembly ────────────────────────────────────────────────────────────
 
@@ -172,8 +187,8 @@ function tick(now: number) {
 
   const components = controlForces(body, geo, controls, tuning)
   const worldForces = assembleWorldForces()
-  drawScene(ctx, cam, segments, geo, body, lines, selectedCleat, ORIGIN_X, ORIGIN_Y)
-  drawOverlay(ctx, cam, body, params, components, worldForces, { showHullDrag, showContact }, ORIGIN_X, ORIGIN_Y)
+  drawScene(ctx, cam, segments, geo, body, lines, selectedCleat, originX, originY)
+  drawOverlay(ctx, cam, body, params, components, worldForces, { showHullDrag, showContact }, originX, originY)
   updateHUD()
   updateTensionPanel()
   requestAnimationFrame(tick)
@@ -237,11 +252,11 @@ canvas.addEventListener('mouseup', (e) => {
 })
 
 function handleClick(sx: number, sy: number) {
-  const cleat = pickCleat(cam, geo, body, sx, sy, ORIGIN_X, ORIGIN_Y)
+  const cleat = pickCleat(cam, geo, body, sx, sy, originX, originY)
   if (cleat !== null) { selectedCleat = cleat; return }
   if (selectedCleat !== null) {
     // Attach the dock end to the closest point on the nearest segment edge.
-    const w = screenToWorld(cam, ORIGIN_X, ORIGIN_Y, sx, sy)
+    const w = screenToWorld(cam, originX, originY, sx, sy)
     let best: { point: { x: number; y: number }; dist: number } | null = null
     for (const seg of segments) {
       const cp = closestPointOnSegment(w, { x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 })
@@ -258,10 +273,10 @@ function handleClick(sx: number, sy: number) {
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault()
   const [sx, sy] = canvasPos(e)
-  const before = screenToWorld(cam, ORIGIN_X, ORIGIN_Y, sx, sy)
+  const before = screenToWorld(cam, originX, originY, sx, sy)
   const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
   cam.zoom = Math.max(0.2, Math.min(6, cam.zoom * factor))
-  const [nsx, nsy] = worldToScreen(cam, ORIGIN_X, ORIGIN_Y, before.x, before.y)
+  const [nsx, nsy] = worldToScreen(cam, originX, originY, before.x, before.y)
   cam.panX += sx - nsx
   cam.panY += sy - nsy
 }, { passive: false })
@@ -421,7 +436,10 @@ function restore() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
+window.addEventListener('resize', resize)
+
 restore()
+resize()        // size the canvas to fill its container before the first fit
 applyActive()
 syncControlsToUI()
 playBtn.textContent = 'Pause'

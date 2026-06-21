@@ -203,16 +203,32 @@ function drawMomentArc(
   ctx.fill()
 }
 
-function drawLegend(ctx: CanvasRenderingContext2D, opts: OverlayOptions) {
-  const x = ctx.canvas.width - 150
-  let y = 16
-  ctx.font = '11px monospace'
+// The pivot-point label gets the crosshair glyph (circle + cross) instead of a
+// colour swatch, so the legend visibly matches the moving marker on the scene.
+const PIVOT_LABEL = 'pivot point'
+
+// Draw the pivot crosshair glyph centred at (cx, cy) — same shape as the
+// on-scene marker, scaled down for the legend swatch.
+function drawPivotGlyph(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.strokeStyle = COLORS.pivot
+  ctx.lineWidth = 1.5
+  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(cx - 6, cy); ctx.lineTo(cx + 6, cy)
+  ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 6)
+  ctx.stroke()
+}
+
+export function drawLegend(ctx: CanvasRenderingContext2D, opts: OverlayOptions) {
+  const x = ctx.canvas.width - 170
+  let y = 18
+  ctx.font = '13px monospace'
   ctx.textBaseline = 'middle'
 
   ctx.fillStyle = '#c8d8e8'
   ctx.fillText('force scale:', x, y)
-  drawArrow(ctx, x + 72, y, x + 72 + FORCE_REF_N * FORCE_PX_PER_N, y, '#c8d8e8', 2)
-  ctx.fillText('1 kN', x + 78 + FORCE_REF_N * FORCE_PX_PER_N, y)
+  drawArrow(ctx, x + 84, y, x + 84 + FORCE_REF_N * FORCE_PX_PER_N, y, '#c8d8e8', 2)
+  ctx.fillText('1 kN', x + 90 + FORCE_REF_N * FORCE_PX_PER_N, y)
 
   const items: [string, string][] = [
     ['thrust', COLORS.thrust],
@@ -221,14 +237,18 @@ function drawLegend(ctx: CanvasRenderingContext2D, opts: OverlayOptions) {
     ['wind', COLORS.wind],
     ['net force', COLORS.netForce],
     ['yaw moment', COLORS.moment],
-    ['pivot point', COLORS.pivot],
+    [PIVOT_LABEL, COLORS.pivot],
   ]
   if (opts.showHullDrag) items.push(['hull drag', COLORS.drag])
   if (opts.showContact) items.push(['contact', COLORS.contact])
   for (const [label, color] of items) {
-    y += 15
-    ctx.fillStyle = color
-    ctx.fillRect(x, y - 4, 10, 8)
+    y += 18
+    if (label === PIVOT_LABEL) {
+      drawPivotGlyph(ctx, x + 5, y)
+    } else {
+      ctx.fillStyle = color
+      ctx.fillRect(x, y - 4, 10, 8)
+    }
     ctx.fillStyle = '#c8d8e8'
     ctx.fillText(label, x + 16, y)
   }

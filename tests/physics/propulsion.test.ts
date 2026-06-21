@@ -149,3 +149,81 @@ describe('rudderAngle mapping', () => {
     expect(rudderAngle(controls({ helm: -1 }), tuning)).toBeCloseTo(-tuning.maxRudderAngle)
   })
 })
+
+// Integrate the boat alone (engine/rudder + hull drag via step), no lines/wind.
+function run(start: RigidBody, inputs: Controls, seconds: number): RigidBody {
+  let b = start
+  const steps = Math.round(seconds * 60)
+  for (let i = 0; i < steps; i++) {
+    b = step(b, params, netForces(controlForces(b, geo, inputs, tuning)), 1 / 60)
+  }
+  return b
+}
+
+describe('engine responsiveness', () => {
+  it('reaches most of top speed within ~5 s (not the old ~17 s crawl)', () => {
+    // τ = 5 s ⇒ v(5 s) ≈ 0.63·Vmax ≈ 1.58 m/s. The old 0.06 damping gave a
+    // ~17 s constant, i.e. only ~0.65 m/s after 5 s — well below this floor.
+    const b = run(forward(0), controls({ throttle: 1, helm: 0 }), 5)
+    expect(b.vx).toBeGreaterThan(1.45)
+    expect(b.vx).toBeLessThan(2.5)
+  })
+
+  it('keeps a ~5 kn top speed at full throttle (unchanged)', () => {
+    const b = run(forward(0), controls({ throttle: 1, helm: 0 }), 40)
+    expect(b.vx).toBeGreaterThan(2.4)
+    expect(b.vx).toBeLessThan(2.6)
+  })
+
+  it('thrust is unchanged in direction by the faster response (pure centreline)', () => {
+    const b = run(forward(0), controls({ throttle: 1, helm: 0 }), 5)
+    expect(Math.abs(b.vy)).toBeLessThan(1e-9)
+    expect(Math.abs(b.yawRate)).toBeLessThan(1e-9)
+  })
+})
+
+describe('steering authority — tighter turns underway', () => {
+  it('full helm at cruise targets a brisk ~0.35 rad/s steady-state yaw rate', () => {
+    // ω_ss = |M_rudder| / dampYaw. Rudder is sized (decoupled from the engine
+    // tuning) to hit ~0.35 rad/s ≈ 20 °/s at cruise speed with full helm.
+    const m = netForces(controlForces(forward(2.5), geo, controls({ throttle: 0, helm: 1 }), tuning))
+    const omegaSS = Math.abs(m.mz) / params.dampYaw
+    expect(omegaSS).toBeCloseTo(0.35, 1)  // within ±0.05 rad/s
+  })
+
+  it('actually swings the bow round quickly when driven', () => {
+    // From cruise, full throttle + full helm: heading should sweep past 45°
+    // within a few seconds (steady-state ~0.35 rad/s, ~1.7 s build-up).
+    const b = run(forward(2.5), controls({ throttle: 1, helm: 1 }), 4)
+    expect(Math.abs(b.heading)).toBeGreaterThan(Math.PI / 4)
+  })
+})
+
+describe('low-speed authority — stronger single-rudder kick at standstill', () => {
+  const def = defaultStandstillAuthority('single')
+
+  it('the default single-rudder authority gives a clearly visible standstill turn', () => {
+    const b = run(forward(0), controls({ throttle: 1, helm: 1, standstillAuthority: def }), 3)
+    expect(Math.abs(b.heading)).toBeGreaterThan(0.05)  // visibly swinging
+  })
+
+  it('the single-rudder prop-wash kick beats twin from rest (preset #4 contract)', () => {
+    // Both start dead in the water and throttle ahead. The single centre rudder
+    // gets the immediate prop-wash kick; twin only bites once it has way on, so
+    // single is clearly ahead on heading after a few seconds.
+    const single = run(forward(0), controls({ throttle: 1, helm: 1, standstillAuthority: def }), 3)
+    const twin   = run(forward(0), controls({ throttle: 1, helm: 1, rudderConfig: 'twin', standstillAuthority: 1 }), 3)
+    expect(Math.abs(single.heading)).toBeGreaterThan(Math.abs(twin.heading) * 1.5)
+  })
+
+  it('twin has zero authority at the instant of standstill', () => {
+    const m = netForces(controlForces(forward(0), geo, controls({ throttle: 1, helm: 1, rudderConfig: 'twin', standstillAuthority: 1 }), tuning))
+    expect(m.mz).toBeCloseTo(0, 6)
+  })
+
+  it('the standstill kick is still weak relative to steering with way on', () => {
+    const standstill = netForces(controlForces(forward(0), geo, controls({ throttle: 1, helm: 1, standstillAuthority: def }), tuning))
+    const withWay    = netForces(controlForces(forward(2.5), geo, controls({ throttle: 1, helm: 1, standstillAuthority: def }), tuning))
+    expect(Math.abs(standstill.mz)).toBeLessThan(Math.abs(withWay.mz) * 0.5)
+  })
+})

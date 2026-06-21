@@ -13,8 +13,9 @@ export interface Controls {
 }
 
 export function defaultStandstillAuthority(config: RudderConfig): number {
-  // Single centre rudder gets some wash; twin outboard rudders get none.
-  return config === 'single' ? 0.3 : 0
+  // Single centre rudder gets a solid dose of wash for low-speed steering;
+  // twin outboard rudders get none.
+  return config === 'single' ? 0.5 : 0
 }
 
 // The twin-rudder configuration can physically never receive prop wash between
@@ -36,16 +37,27 @@ export interface PropulsionTuning {
 
 const V_MAX = 2.5             // m/s target terminal surge at full throttle (~5 kn)
 const MAX_RUDDER_ANGLE = 0.611 // rad ≈ 35°
+const V_CRUISE = V_MAX         // reference flow speed for steering authority
+// Target steady-state yaw rate at cruise with full helm: ~0.35 rad/s ≈ 20°/s.
+// Brisk and responsive for a teaching tool, still believable for a 40-footer.
+const TARGET_TURN_RATE = 0.35  // rad/s
 
 // Derive tuning from boat geometry so behaviour scales with boat size.
 export function propulsionTuning(geo: BoatGeometry): PropulsionTuning {
   const maxThrust = geo.dampSurge * V_MAX
+  // Size the rudder so full helm at cruise drives the boat to TARGET_TURN_RATE.
+  // Solving M_rudder = dampYaw · ω_target with M_rudder = |rudderX| · F_side and
+  // F_side = rudderCoeff · sin(maxAngle) · V_cruise² gives the coefficient below.
+  // Deriving from dampYaw (not maxThrust) decouples steering authority from the
+  // engine-response tuning, so changing surge damping never warps the turn rate.
+  const rudderCoeff =
+    (geo.dampYaw * TARGET_TURN_RATE) /
+    (Math.abs(geo.rudderX) * Math.sin(MAX_RUDDER_ANGLE) * V_CRUISE * V_CRUISE)
   return {
     maxThrust,
-    // At cruise (~2 m/s, q≈4) full helm produces roughly 2× thrust of side-force.
-    rudderCoeff: (2 * maxThrust) / (Math.sin(MAX_RUDDER_ANGLE) * 4),
+    rudderCoeff,
     maxRudderAngle: MAX_RUDDER_ANGLE,
-    washSpeed2: 2.0,
+    washSpeed2: 4.0,
     propWalk: geo.massKg * 0.05,
   }
 }
