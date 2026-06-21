@@ -28,6 +28,21 @@ export function makeBody(x: number, y: number, heading: number): RigidBody {
   return { x, y, heading, vx: 0, vy: 0, yawRate: 0 }
 }
 
+// Anisotropic linear hull damping in the BODY frame, computed against water
+// (assumed still). Returned as a resisting force/moment so it can be both fed
+// into the integrator and drawn as an overlay.
+export function computeHullDrag(b: RigidBody, p: BoatParams): Forces {
+  const cos = Math.cos(b.heading)
+  const sin = Math.sin(b.heading)
+  const vSurge =  b.vx * cos + b.vy * sin
+  const vSway  = -b.vx * sin + b.vy * cos
+  return {
+    fx: -p.dampSurge * vSurge,
+    fy: -p.dampSway  * vSway,
+    mz: -p.dampYaw   * b.yawRate,
+  }
+}
+
 // Semi-implicit (symplectic) Euler: velocity updated first, position second.
 // All forces in body frame; hull damping computed against water (assumed still).
 export function step(b: RigidBody, p: BoatParams, bodyForce: Forces, dt: number): RigidBody {
@@ -42,10 +57,11 @@ export function step(b: RigidBody, p: BoatParams, bodyForce: Forces, dt: number)
   const vSurge =  b.vx * cos + b.vy * sin
   const vSway  = -b.vx * sin + b.vy * cos
 
-  // Net body-frame forces with linear damping
-  const fSurge = bodyForce.fx - p.dampSurge * vSurge
-  const fSway  = bodyForce.fy - p.dampSway  * vSway
-  const mYaw   = bodyForce.mz - p.dampYaw   * b.yawRate
+  // Net body-frame forces: applied forces plus anisotropic hull damping
+  const drag = computeHullDrag(b, p)
+  const fSurge = bodyForce.fx + drag.fx
+  const fSway  = bodyForce.fy + drag.fy
+  const mYaw   = bodyForce.mz + drag.mz
 
   // Symplectic: update velocities first (body frame)
   const newVSurge  = vSurge  + (fSurge / mSurge) * dt
