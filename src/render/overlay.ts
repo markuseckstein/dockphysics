@@ -1,13 +1,14 @@
-import type { RigidBody, Forces, BoatParams } from '../physics/integrator'
+import type { RigidBody, BoatParams } from '../physics/integrator'
 import { computeHullDrag } from '../physics/integrator'
 import type { Vec2 } from '../scene/boat'
 import type { ForceComponent } from '../physics/propulsion'
 import { netForces } from '../physics/propulsion'
-import { worldToCanvas } from './canvas'
-import { SCALE_PX_PER_M } from '../units'
+import type { WorldForce } from '../physics/forces'
+import type { Camera } from './camera'
+import { worldToScreen } from './camera'
 
-// Consistent on-screen force scale: pixels of arrow per newton of force.
-// Tuned so a ~1 kN force draws ~30 px.
+// On-screen force scale: pixels of arrow per newton (zoom-independent so arrows
+// stay readable). Tuned so ~1 kN draws ~30 px.
 export const FORCE_PX_PER_N = 0.03
 const FORCE_REF_N = 1000  // legend reference = 1 kN
 
@@ -19,27 +20,34 @@ const COLORS = {
   pivot:    '#ffffff',  // white
   drag:     '#94a3b8',  // slate
   walk:     '#a78bfa',  // violet
+  contact:  '#cbd5e1',  // light slate
+  wind:     '#22d3ee',  // cyan
 }
 
 export interface OverlayOptions {
   showHullDrag: boolean
+  showContact: boolean
 }
 
-// Rotate a body-frame point to world coordinates.
+// Colour-code line tension: green (light) → amber → red (heavy).
+export function tensionColor(tensionN: number): string {
+  if (tensionN < 2000) return '#4ade80'
+  if (tensionN < 8000) return '#f59e0b'
+  return '#ef4444'
+}
+
 function bodyToWorld(b: RigidBody, p: Vec2): Vec2 {
   const cos = Math.cos(b.heading)
   const sin = Math.sin(b.heading)
   return { x: b.x + p.x * cos - p.y * sin, y: b.y + p.x * sin + p.y * cos }
 }
 
-// Rotate a body-frame vector (no translation) to world.
 function bodyVecToWorld(b: RigidBody, fx: number, fy: number): Vec2 {
   const cos = Math.cos(b.heading)
   const sin = Math.sin(b.heading)
   return { x: fx * cos - fy * sin, y: fx * sin + fy * cos }
 }
 
-// Draw an arrow in canvas space from (x0,y0) to (x1,y1).
 function drawArrow(
   ctx: CanvasRenderingContext2D,
   x0: number, y0: number, x1: number, y1: number,
@@ -65,72 +73,95 @@ function drawArrow(
   ctx.fill()
 }
 
-// Draw a single body-frame force as a world-space arrow from its application point.
-function drawForceVector(
-  ctx: CanvasRenderingContext2D,
-  body: RigidBody, point: Vec2, fx: number, fy: number,
+// Draw a world-frame force (N) at a world point as a screen-space arrow.
+function drawWorldForce(
+  ctx: CanvasRenderingContext2D, cam: Camera,
+  point: Vec2, fx: number, fy: number,
+  color: string, originX: number, originY: number, width = 2,
+) {
+  const [px, py] = worldToScreen(cam, originX, originY, point.x, point.y)
+  // Force px length is zoom-independent; world y is up so screen y is flipped.
+  drawArrow(ctx, px, py, px + fx * FORCE_PX_PER_N, py - fy * FORCE_PX_PER_N, color, width)
+}
+
+// Draw a body-frame force at a body point.
+function drawBodyForce(
+  ctx: CanvasRenderingContext2D, cam: Camera, body: RigidBody,
+  point: Vec2, fx: number, fy: number,
   color: string, originX: number, originY: number, width = 2,
 ) {
   const wPoint = bodyToWorld(body, point)
   const wVec = bodyVecToWorld(body, fx, fy)
-  const [px, py] = worldToCanvas(wPoint.x, wPoint.y, originX, originY)
-  const [ex, ey] = worldToCanvas(
-    wPoint.x + wVec.x * FORCE_PX_PER_N / SCALE_PX_PER_M,
-    wPoint.y + wVec.y * FORCE_PX_PER_N / SCALE_PX_PER_M,
-    originX, originY,
-  )
-  drawArrow(ctx, px, py, ex, ey, color, width)
+  drawWorldForce(ctx, cam, wPoint, wVec.x, wVec.y, color, originX, originY, width)
 }
 
 // Instantaneous pivot (zero-velocity point) of the rigid body, world frame.
-// For velocity v at CoM and yaw rate ω: offset r = (-vy/ω, vx/ω).
 export function pivotPoint(b: RigidBody): Vec2 | null {
   const w = b.yawRate
-  if (Math.abs(w) < 1e-3) return null  // ~pure translation, pivot at infinity
+  if (Math.abs(w) < 1e-3) return null
   return { x: b.x - b.vy / w, y: b.y + b.vx / w }
 }
 
-// Draw the full teaching overlay on top of the scene.
 export function drawOverlay(
   ctx: CanvasRenderingContext2D,
+  cam: Camera,
   body: RigidBody,
   params: BoatParams,
-  components: ForceComponent[],
+  components: ForceComponent[],   // body-frame propulsion/steering
+  worldForces: WorldForce[],      // lines + contact + wind, world frame
   opts: OverlayOptions,
   originX: number,
   originY: number,
 ) {
-  // ── Per-source arrows: thrust, rudder, prop-walk ──────────────────────────
+  // ── Propulsion arrows: thrust, rudder, prop-walk ──────────────────────────
   for (const c of components) {
     const color = c.label === 'thrust' ? COLORS.thrust
       : c.label === 'rudder' ? COLORS.rudder
       : COLORS.walk
-    drawForceVector(ctx, body, c.point, c.fx, c.fy, color, originX, originY, 2)
+    drawBodyForce(ctx, cam, body, c.point, c.fx, c.fy, color, originX, originY, 2)
   }
 
-  // ── Hull drag arrows (toggle, off by default) ─────────────────────────────
+  // ── Lines / wind / contact arrows (world frame) ───────────────────────────
+  for (const f of worldForces) {
+    if (f.label === 'contact' && !opts.showContact) continue
+    const mag = Math.hypot(f.fx, f.fy)
+    const color = f.label === 'wind' ? COLORS.wind
+      : f.label === 'contact' ? COLORS.contact
+      : tensionColor(mag)  // lines
+    drawWorldForce(ctx, cam, f.point, f.fx, f.fy, color, originX, originY, f.label === 'line' ? 2.5 : 2)
+  }
+
+  // ── Hull drag (toggle) ────────────────────────────────────────────────────
   if (opts.showHullDrag) {
     const drag = computeHullDrag(body, params)
-    drawForceVector(ctx, body, { x: 0, y: 0 }, drag.fx, drag.fy, COLORS.drag, originX, originY, 2)
+    drawBodyForce(ctx, cam, body, { x: 0, y: 0 }, drag.fx, drag.fy, COLORS.drag, originX, originY, 2)
   }
 
-  // ── Net force at the CoM ──────────────────────────────────────────────────
+  // ── Net force at the CoM (everything that's currently shown) ───────────────
   const propNet = netForces(components)
-  const dragNet = opts.showHullDrag ? computeHullDrag(body, params) : { fx: 0, fy: 0, mz: 0 }
-  const net: Forces = {
-    fx: propNet.fx + dragNet.fx,
-    fy: propNet.fy + dragNet.fy,
-    mz: propNet.mz + dragNet.mz,
+  const propW = bodyVecToWorld(body, propNet.fx, propNet.fy)
+  let netX = propW.x
+  let netY = propW.y
+  if (opts.showHullDrag) {
+    const drag = computeHullDrag(body, params)
+    const dW = bodyVecToWorld(body, drag.fx, drag.fy)
+    netX += dW.x; netY += dW.y
   }
-  drawForceVector(ctx, body, { x: 0, y: 0 }, net.fx, net.fy, COLORS.netForce, originX, originY, 3)
+  let netMz = propNet.mz + (opts.showHullDrag ? computeHullDrag(body, params).mz : 0)
+  for (const f of worldForces) {
+    if (f.label === 'contact' && !opts.showContact) continue
+    netX += f.fx; netY += f.fy
+    netMz += (f.point.x - body.x) * f.fy - (f.point.y - body.y) * f.fx
+  }
+  drawWorldForce(ctx, cam, { x: body.x, y: body.y }, netX, netY, COLORS.netForce, originX, originY, 3)
 
-  // ── Net yaw-moment curved arrow around the CoM ────────────────────────────
-  drawMomentArc(ctx, body, net.mz, originX, originY)
+  // ── Net yaw-moment curved arrow ───────────────────────────────────────────
+  drawMomentArc(ctx, cam, body, netMz, originX, originY)
 
   // ── Instantaneous pivot-point marker ──────────────────────────────────────
   const pivot = pivotPoint(body)
   if (pivot) {
-    const [cx, cy] = worldToCanvas(pivot.x, pivot.y, originX, originY)
+    const [cx, cy] = worldToScreen(cam, originX, originY, pivot.x, pivot.y)
     ctx.strokeStyle = COLORS.pivot
     ctx.lineWidth = 1.5
     ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.stroke()
@@ -143,26 +174,22 @@ export function drawOverlay(
   drawLegend(ctx, opts)
 }
 
-// Curved arrow whose sweep length grows with |moment|; arrowhead shows CCW/CW.
 function drawMomentArc(
-  ctx: CanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D, cam: Camera,
   body: RigidBody, mz: number, originX: number, originY: number,
 ) {
   if (Math.abs(mz) < 1) return
-  const [cx, cy] = worldToCanvas(body.x, body.y, originX, originY)
+  const [cx, cy] = worldToScreen(cam, originX, originY, body.x, body.y)
   const r = 22
-  // Sweep proportional to magnitude, clamped to most of a circle.
   const sweep = Math.min(Math.PI * 1.5, (Math.abs(mz) / 8000) * Math.PI)
-  const ccw = mz > 0                 // +mz = CCW in world; canvas y is flipped
+  const ccw = mz > 0
   const start = -Math.PI / 2
-  // In flipped canvas space, CCW world rotation draws clockwise on screen.
   const end = start + (ccw ? -sweep : sweep)
   ctx.strokeStyle = COLORS.moment
   ctx.lineWidth = 2.5
   ctx.beginPath()
   ctx.arc(cx, cy, r, start, end, ccw)
   ctx.stroke()
-  // Arrowhead at the arc end, tangent direction.
   const tangent = end + (ccw ? -Math.PI / 2 : Math.PI / 2)
   const ax = cx + r * Math.cos(end)
   const ay = cy + r * Math.sin(end)
@@ -176,14 +203,12 @@ function drawMomentArc(
   ctx.fill()
 }
 
-// Force-scale reference + legend in the top-right corner.
 function drawLegend(ctx: CanvasRenderingContext2D, opts: OverlayOptions) {
   const x = ctx.canvas.width - 150
   let y = 16
   ctx.font = '11px monospace'
   ctx.textBaseline = 'middle'
 
-  // Scale reference arrow = 1 kN
   ctx.fillStyle = '#c8d8e8'
   ctx.fillText('force scale:', x, y)
   drawArrow(ctx, x + 72, y, x + 72 + FORCE_REF_N * FORCE_PX_PER_N, y, '#c8d8e8', 2)
@@ -192,11 +217,14 @@ function drawLegend(ctx: CanvasRenderingContext2D, opts: OverlayOptions) {
   const items: [string, string][] = [
     ['thrust', COLORS.thrust],
     ['rudder', COLORS.rudder],
+    ['line tension', '#f59e0b'],
+    ['wind', COLORS.wind],
     ['net force', COLORS.netForce],
     ['yaw moment', COLORS.moment],
     ['pivot point', COLORS.pivot],
   ]
   if (opts.showHullDrag) items.push(['hull drag', COLORS.drag])
+  if (opts.showContact) items.push(['contact', COLORS.contact])
   for (const [label, color] of items) {
     y += 15
     ctx.fillStyle = color
